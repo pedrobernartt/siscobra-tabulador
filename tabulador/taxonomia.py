@@ -28,7 +28,9 @@ TAXONOMIA: list[SituacaoAtual] = [
         nome="Contato",
         descricao=(
             "Use quando houve interação efetiva com o cliente DEVEDOR (não terceiro) "
-            "e a conversa avançou para alguma resolução, proposta ou conclusão."
+            "e a conversa avançou para alguma resolução, proposta ou conclusão. "
+            "IMPORTANTE: só use Contato → Proposta se a negociação ainda está ATIVA "
+            "(sem fechamento). Se o cliente fechou ou a unidade já tem acordo, use Acordo."
         ),
         complementos=[
             Complemento(
@@ -61,6 +63,58 @@ TAXONOMIA: list[SituacaoAtual] = [
                 quando_usar=(
                     "Cliente principal atendeu, mas a decisão depende de outra pessoa "
                     "(cônjuge, sócio, financeiro, advogado)."
+                ),
+            ),
+        ],
+    ),
+    SituacaoAtual(
+        codigo=2,
+        nome="Acordo",
+        descricao=(
+            "Use SEMPRE que a conversa for sobre um acordo — tanto no momento do FECHAMENTO "
+            "quanto em interações PÓS-FECHAMENTO de unidade que JÁ TEM acordo ativo. "
+            "Sinais de fechamento: 'pode gerar o boleto', 'aceito', 'fechado', 'manda o termo', "
+            "termo Zapsign enviado/assinado, boleto de entrada pago, cliente referenciando "
+            "parcela do acordo, pedido de 2ª via ou dúvida sobre acordo já firmado. "
+            "Esta situação tem PRIORIDADE sobre Contato → Proposta."
+        ),
+        complementos=[
+            Complemento(
+                codigo=1,
+                nome="Acordo com uso de Alvará CJ",
+                quando_usar=(
+                    "Acordo envolve levantamento de valores depositados/bloqueados "
+                    "no processo via alvará judicial."
+                ),
+            ),
+            Complemento(
+                codigo=2,
+                nome="Acordo extrajudicial à vista CJ",
+                quando_usar=(
+                    "Acordo fechado em parcela única, SEM processo judicial vinculado."
+                ),
+            ),
+            Complemento(
+                codigo=3,
+                nome="Acordo extrajudicial Parcelado CJ",
+                quando_usar=(
+                    "Acordo fechado em 2 ou mais parcelas, SEM processo judicial vinculado."
+                ),
+            ),
+            Complemento(
+                codigo=4,
+                nome="Acordo judicial à vista CJ",
+                quando_usar=(
+                    "Acordo em parcela única, COM processo judicial ativo vinculado "
+                    "(número de processo mencionado, execução ou termo Zapsign)."
+                ),
+            ),
+            Complemento(
+                codigo=5,
+                nome="Acordo judicial parcelado CJ",
+                quando_usar=(
+                    "Acordo em 2 ou mais parcelas, COM processo judicial ativo vinculado "
+                    "(número de processo mencionado, execução ou termo Zapsign)."
                 ),
             ),
         ],
