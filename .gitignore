@@ -1,0 +1,23 @@
+# Ambiente virtual
+.venv/
+venv/
+env/
+
+# Variáveis de ambiente (contém a API key — NUNCA subir)
+.env
+
+# Banco de dados local
+tabulacoes.db
+
+# Config local (operadores cadastrados — opcional subir)
+config.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Streamlit cache
+.streamlit/cache/
