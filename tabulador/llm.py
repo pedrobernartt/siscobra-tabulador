@@ -37,6 +37,9 @@ PROVEDORES: dict[str, dict] = {
         "modelo_padrao": "gemini-2.5-flash",
         "modelos_sugeridos": ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-flash-lite"],
         "link_chave": "https://aistudio.google.com/apikey",
+        # Gemini 2.5/3.x "pensam" por padrão; os tokens de raciocínio consomem o
+        # limite de saída e truncam o JSON. "none" desliga o thinking (modelos Flash).
+        "extra_create_kwargs": {"extra_body": {"reasoning_effort": "none"}},
     },
     "openai": {
         "label": "OpenAI (GPT)",
@@ -138,21 +141,32 @@ def _criar_enviador(spec: dict, modelo: str, chave: str, system_prompt: str):
     específica do provedor. 'mensagens' é a lista no formato role/content.
     """
     if spec["tipo"] == "openai":
-        from openai import OpenAI
+        from openai import BadRequestError, OpenAI
 
-        kwargs = {"api_key": chave}
+        client_kwargs = {"api_key": chave}
         if spec.get("base_url"):
-            kwargs["base_url"] = spec["base_url"]
-        client = OpenAI(**kwargs)
+            client_kwargs["base_url"] = spec["base_url"]
+        client = OpenAI(**client_kwargs)
+
+        # Parâmetros extras por provedor (ex.: desligar o thinking do Gemini).
+        extra = spec.get("extra_create_kwargs", {})
 
         def enviar(mensagens: list[dict]) -> tuple[str, int, int]:
-            resposta = client.chat.completions.create(
+            base = dict(
                 model=modelo,
                 messages=[{"role": "system", "content": system_prompt}, *mensagens],
-                max_tokens=1024,
+                max_tokens=8192,  # folga p/ raciocínio + JSON; evita truncagem
                 temperature=0,
                 response_format={"type": "json_object"},
             )
+            try:
+                resposta = client.chat.completions.create(**base, **extra)
+            except BadRequestError:
+                # Se o modelo rejeitar os parâmetros extras (ex.: reasoning_effort),
+                # tenta sem eles — o max_tokens alto já evita a truncagem.
+                if not extra:
+                    raise
+                resposta = client.chat.completions.create(**base)
             texto = resposta.choices[0].message.content or ""
             uso = getattr(resposta, "usage", None)
             ti = getattr(uso, "prompt_tokens", 0) or 0
