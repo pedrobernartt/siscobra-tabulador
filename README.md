@@ -119,11 +119,13 @@ O sistema **nunca** sugere uma combinação fora desta lista (validado em `taxon
 
 | Provedor / modelo | Custo por tabulação |
 |-------------------|---------------------|
-| **Gemini 2.0 Flash** | **Grátis** dentro da camada gratuita do Google AI Studio |
+| **Gemini 2.5 Flash** | **Grátis** dentro da camada gratuita do Google AI Studio |
+| Gemini 2.5 Flash-Lite | **Grátis** (cota diária maior, um pouco menos preciso) |
+| Gemini 3.5 Flash | **Grátis** com limites mais restritos (modelo mais inteligente) |
 | GPT-4o mini | ~US$ 0,001–0,002 |
 | Claude Sonnet 4.5 | ~US$ 0,010–0,015 |
 
-Para uso interno de baixo volume, o **Gemini gratuito** costuma ser suficiente. Os limites da camada gratuita (requisições por minuto/dia) são definidos pelo Google.
+Para uso interno de baixo volume, o **Gemini gratuito** costuma ser suficiente. Os limites da camada gratuita (requisições por minuto/dia) são definidos pelo Google e variam por modelo — o Flash-Lite costuma ter a maior cota diária. O modelo pode ser trocado a qualquer momento na aba **Configurações** ou pela variável `MODEL_NAME`.
 
 > Existe também o `PROMPT-UNIVERSAL.md` / `PROMPT-CURTO.md` (na pasta acima): o mesmo trabalho em forma de prompt para colar em qualquer chat de IA, sem rodar o app.
 

@@ -34,8 +34,8 @@ PROVEDORES: dict[str, dict] = {
         "label": "Google Gemini — possui camada GRATUITA",
         "tipo": "openai",
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "modelo_padrao": "gemini-2.0-flash",
-        "modelos_sugeridos": ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"],
+        "modelo_padrao": "gemini-2.5-flash",
+        "modelos_sugeridos": ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-flash-lite"],
         "link_chave": "https://aistudio.google.com/apikey",
     },
     "openai": {
@@ -60,9 +60,9 @@ PROVEDORES: dict[str, dict] = {
 # Preços por milhão de tokens (USD), só para estimativa no histórico.
 # Modelos gratuitos (Gemini free tier) ficam em 0.
 _PRECOS: dict[str, dict[str, float]] = {
-    "gemini-2.0-flash": {"input": 0.0, "output": 0.0},
     "gemini-2.5-flash": {"input": 0.0, "output": 0.0},
-    "gemini-1.5-flash": {"input": 0.0, "output": 0.0},
+    "gemini-2.5-flash-lite": {"input": 0.0, "output": 0.0},
+    "gemini-3.5-flash": {"input": 0.0, "output": 0.0},
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "gpt-4o": {"input": 2.50, "output": 10.0},
     "gpt-4.1-mini": {"input": 0.40, "output": 1.60},

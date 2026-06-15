@@ -22,7 +22,7 @@ _ENV_KEYS: dict[str, str] = {
 _PADROES: dict = {
     # Provedor padrão: Gemini, que possui camada gratuita.
     "provedor": "gemini",
-    "modelo": "gemini-2.0-flash",
+    "modelo": "gemini-2.5-flash",
     # Uma chave por provedor (coladas pelo usuário na aba Configurações).
     "chaves": {
         "gemini": "",
