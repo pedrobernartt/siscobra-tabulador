@@ -32,6 +32,11 @@ aba_principal, aba_categorias, aba_historico, aba_config = st.tabs([
 
 with aba_principal:
     st.title("Auto-Tabulação Siscobra")
+    _cfg_motor = carregar_config()
+    st.caption(
+        f"Motor de IA: **{_cfg_motor.get('provedor', '?')} · {_cfg_motor.get('modelo', '?')}**"
+        "  ·  v2 (multi-provedor, anti-truncagem)"
+    )
 
     col_input, col_output = st.columns([1, 1], gap="large")
 
