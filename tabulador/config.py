@@ -37,15 +37,29 @@ _PADROES: dict = {
 }
 
 
+# Modelo padrão por provedor — evita herdar um MODEL_NAME de outra família.
+_MODELO_PADRAO_PROVEDOR: dict[str, str] = {
+    "gemini": "gemini-2.5-flash",
+    "openai": "gpt-4o-mini",
+    "anthropic": "claude-sonnet-4-5",
+}
+
+
 def _overlay_env(cfg: dict) -> dict:
-    """Aplica PROVIDER / MODEL_NAME do ambiente sobre a config padrão.
-    Usado quando não há config.json persistente (ex.: Streamlit Cloud)."""
-    prov = os.getenv("PROVIDER", "").strip()
-    if prov:
-        cfg["provedor"] = prov
+    """Aplica PROVIDER / MODEL_NAME do ambiente sobre a config padrão
+    (usado quando não há config.json, ex.: Streamlit Cloud).
+
+    Só sobrescreve quando PROVIDER está definido. Assim, um MODEL_NAME
+    "órfão" de uma configuração antiga (ex.: claude-sonnet-4-5 sobrando
+    no .env/Secrets) NÃO é aplicado por engano sobre o provedor padrão
+    (Gemini), o que causaria erro de modelo incompatível.
+    """
+    prov = os.getenv("PROVIDER", "").strip().lower()
+    if not prov:
+        return cfg
+    cfg["provedor"] = prov
     modelo = os.getenv("MODEL_NAME", "").strip()
-    if modelo:
-        cfg["modelo"] = modelo
+    cfg["modelo"] = modelo or _MODELO_PADRAO_PROVEDOR.get(prov, cfg["modelo"])
     return cfg
 
 
