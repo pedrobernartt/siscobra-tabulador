@@ -4,9 +4,9 @@ Interface Streamlit — Auto-Tabulação Siscobra.
 import streamlit as st
 
 from tabulador.categorias import listar_nomes_categorias, obter_categoria
-from tabulador.config import carregar_config, salvar_operadores
+from tabulador.config import carregar_config, salvar_config
 from tabulador.db import atualizar_feedback, listar_historico, salvar_tabulacao
-from tabulador.llm import tabular
+from tabulador.llm import PROVEDORES, tabular
 from tabulador.parser import formatar_para_llm, parsear_conversa, tem_formato_kommo, tem_formato_whatsapp
 
 st.set_page_config(
@@ -64,12 +64,13 @@ with aba_principal:
                 with st.spinner("Analisando..."):
                     try:
                         config = carregar_config()
-                        modelo = config.get("modelo", "claude-sonnet-4-5")
+                        provedor = config.get("provedor", "gemini")
+                        modelo = config.get("modelo")
 
                         mensagens = parsear_conversa(conversa_raw)
                         conversa_formatada = formatar_para_llm(mensagens) if mensagens else conversa_raw
 
-                        resultado = tabular(conversa_formatada, modelo=modelo)
+                        resultado = tabular(conversa_formatada, provedor=provedor, modelo=modelo)
 
                         id_tab = salvar_tabulacao(
                             conversa_input=conversa_raw,
@@ -245,20 +246,50 @@ with aba_config:
 
     config_atual = carregar_config()
 
-    # ── Modelo ────────────────────────────────────────────────────────────────
-    st.subheader("Modelo de IA")
-    modelo_opcoes = {
-        "claude-sonnet-4-5": "Sonnet 4.5 — mais preciso (recomendado)",
-        "claude-haiku-4-5-20251001": "Haiku 4.5 — mais rápido e econômico",
-    }
-    modelo_atual = config_atual.get("modelo", "claude-sonnet-4-5")
-    modelo_novo = st.selectbox(
-        "Modelo",
-        options=list(modelo_opcoes.keys()),
-        index=list(modelo_opcoes.keys()).index(modelo_atual),
-        format_func=lambda m: modelo_opcoes[m],
-        key="modelo_select",
+    # ── Provedor de IA ────────────────────────────────────────────────────────
+    st.subheader("Provedor de IA")
+
+    provedores_keys = list(PROVEDORES.keys())
+    provedor_atual = config_atual.get("provedor", "gemini")
+    if provedor_atual not in provedores_keys:
+        provedor_atual = "gemini"
+
+    provedor_novo = st.selectbox(
+        "Provedor",
+        options=provedores_keys,
+        index=provedores_keys.index(provedor_atual),
+        format_func=lambda p: PROVEDORES[p]["label"],
+        key="provedor_select",
     )
+    spec = PROVEDORES[provedor_novo]
+
+    if provedor_novo == "gemini":
+        st.info(
+            "O Gemini tem **camada gratuita**. Crie a chave no Google AI Studio "
+            "(basta uma conta Google) e cole abaixo."
+        )
+    st.caption(f"🔑 Pegue uma chave em: {spec['link_chave']}")
+
+    # Modelo — campo livre; reinicia ao trocar de provedor
+    modelo_salvo = config_atual.get("modelo", "") if config_atual.get("provedor") == provedor_novo else ""
+    modelo_novo = st.text_input(
+        "Modelo",
+        value=modelo_salvo or spec["modelo_padrao"],
+        help="Sugestões: " + ", ".join(spec["modelos_sugeridos"]),
+        key=f"modelo_input_{provedor_novo}",
+    )
+
+    # Chave de API do provedor selecionado
+    chave_atual = (config_atual.get("chaves") or {}).get(provedor_novo, "")
+    chave_nova = st.text_input(
+        f"Chave de API — {spec['label']}",
+        value=chave_atual,
+        type="password",
+        help="A chave é salva localmente neste computador (config.json) e não é compartilhada.",
+        key=f"chave_input_{provedor_novo}",
+    )
+    if chave_atual:
+        st.caption("✅ Há uma chave salva para este provedor.")
 
     # ── Operadores ────────────────────────────────────────────────────────────
     st.subheader("Operadores da Solug")
@@ -278,7 +309,10 @@ with aba_config:
     if st.button("💾 Salvar configurações", type="primary"):
         novos_ops = [n.strip() for n in operadores_texto.splitlines() if n.strip()]
         config_atual["operadores"] = novos_ops
-        config_atual["modelo"] = modelo_novo
-        from tabulador.config import salvar_config
+        config_atual["provedor"] = provedor_novo
+        config_atual["modelo"] = modelo_novo.strip() or spec["modelo_padrao"]
+        chaves = config_atual.get("chaves") or {}
+        chaves[provedor_novo] = chave_nova.strip()
+        config_atual["chaves"] = chaves
         salvar_config(config_atual)
         st.success("Configurações salvas!")

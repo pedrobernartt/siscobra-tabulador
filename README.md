@@ -1,13 +1,16 @@
 # Tabulador Siscobra
 
-Ferramenta interna da **Solug Cobranças** para auto-tabulação de ocorrências no Siscobra via IA (Claude). O operador cola a conversa do WhatsApp e recebe os três campos prontos: **Situação Atual**, **Complemento** e **Descritivo**.
+Ferramenta interna da **Solug Cobranças** para auto-tabulação de ocorrências no Siscobra via IA (**Google Gemini** com camada gratuita, **OpenAI/GPT** ou **Claude**). O operador cola a conversa do WhatsApp e recebe os três campos prontos: **Situação Atual**, **Complemento** e **Descritivo**.
 
 ---
 
 ## Requisitos
 
-- Python 3.11+
-- Chave de API da Anthropic (`ANTHROPIC_API_KEY`)
+- Python 3.9+
+- Uma chave de API de **um** destes provedores:
+  - **Google Gemini** — possui **camada gratuita**: https://aistudio.google.com/apikey *(recomendado)*
+  - **OpenAI (GPT)** — https://platform.openai.com/api-keys
+  - **Anthropic (Claude)** — https://console.anthropic.com/settings/keys
 
 ---
 
@@ -25,11 +28,7 @@ source .venv/bin/activate        # Linux/Mac
 # 3. Instale as dependências
 pip install -r requirements.txt
 
-# 4. Configure as variáveis de ambiente
-cp .env.example .env
-# Edite o arquivo .env e adicione sua ANTHROPIC_API_KEY
-
-# 5. Rode a aplicação
+# 4. Rode a aplicação
 streamlit run app.py
 ```
 
@@ -37,16 +36,20 @@ A interface abre automaticamente em `http://localhost:8501`.
 
 ---
 
-## Configuração da API Key
+## Configuração do provedor de IA
 
-No arquivo `.env`:
+A forma mais simples é pela própria interface:
 
-```env
-ANTHROPIC_API_KEY=sk-ant-sua-chave-aqui
-MODEL_NAME=claude-sonnet-4-5
-```
+1. Rode o app e abra a aba **⚙️ Configurações**.
+2. Escolha o **Provedor** (o Gemini é gratuito e já vem selecionado).
+3. Cole a **Chave de API** e, se quiser, ajuste o **Modelo**.
+4. Clique em **Salvar configurações**.
 
-Para reduzir custo após validação, troque `MODEL_NAME` para `claude-haiku-4-5-20251001`.
+A chave fica salva **localmente** em `config.json` (ignorado pelo Git — nunca é compartilhada).
+
+> Para a chave gratuita do Gemini, acesse https://aistudio.google.com/apikey — basta uma conta Google.
+
+**Alternativa por `.env`** (fallback): copie `.env.example` para `.env` e preencha `PROVIDER`, `MODEL_NAME` e a chave do provedor escolhido.
 
 ---
 
@@ -63,17 +66,19 @@ python -m pytest tests/ -v
 
 ```
 siscobra-tabulador/
-├── .env.example          # Template de configuração
+├── .env.example          # Template de configuração (fallback)
 ├── README.md
 ├── requirements.txt
 ├── app.py                # Interface Streamlit
+├── config.json           # Provedor + modelo + chaves (criado ao salvar; ignorado pelo Git)
 ├── tabulacoes.db         # Banco SQLite (criado automaticamente)
 ├── tabulador/
 │   ├── __init__.py
 │   ├── taxonomia.py      # Fonte da verdade: Situação/Complemento + validação
-│   ├── parser.py         # Parser do export do WhatsApp
+│   ├── parser.py         # Parser do export do WhatsApp / timeline do Kommo
 │   ├── prompt.py         # System prompt dinâmico + few-shot
-│   ├── llm.py            # Wrapper Anthropic (caching, retry, custo)
+│   ├── llm.py            # Wrapper multi-provedor (Gemini / OpenAI / Claude)
+│   ├── config.py         # Provedor, modelo, chaves e operadores
 │   └── db.py             # Log SQLite
 └── tests/
     └── test_taxonomia.py
@@ -84,12 +89,12 @@ siscobra-tabulador/
 ## Como usar
 
 1. Abra a interface (`streamlit run app.py`)
-2. Cole o export do WhatsApp no campo da esquerda
-3. Selecione o modelo (Sonnet = mais preciso, Haiku = mais barato)
+2. *(Na primeira vez)* configure o provedor de IA e cole a chave na aba **⚙️ Configurações**
+3. Cole o export do WhatsApp (ou Kommo / resumo) no campo da esquerda
 4. Clique em **Tabular**
 5. Confira os campos gerados na coluna direita
 6. Edite o descritivo se necessário
-7. Clique em **Aprovar e usar** ou **Salvar com edição**
+7. Clique em **Aprovar** ou **Salvar com edição**
 8. Copie os valores para o Siscobra
 
 O histórico completo fica na aba **Histórico**.
@@ -101,22 +106,26 @@ O histórico completo fica na aba **Histórico**.
 | Situação Atual | Complementos disponíveis |
 |----------------|--------------------------|
 | Contato (26) | Proposta, Sem interesse, Sem sucesso, Terceiros |
+| Acordo (2) | Acordo com uso de Alvará CJ, Acordo extrajudicial à vista CJ, Acordo extrajudicial Parcelado CJ, Acordo judicial à vista CJ, Acordo judicial parcelado CJ |
 | Contato com terceiros (6) | Desconhece a pessoa/cobrança, Inquilino, Novo proprietário, Representante legal (Advogado), Recado |
 | Dúvidas gerais (3) | Dúvidas de preenchimento link Quita+, Encargos (juros/mora/HO), Solicitação CND, Cliente adimplente |
 | Recusa acordo (9) | Alega pagamento, Discorda do valor cobrado, Não informou o motivo, Sem previsão de pagamento |
 
-O sistema **nunca** sugere uma combinação fora desta lista.
+O sistema **nunca** sugere uma combinação fora desta lista (validado em `taxonomia.py`).
 
 ---
 
-## Custo estimado
+## Custo por provedor
 
-| Modelo | Por tabulação (estimado) |
-|--------|--------------------------|
-| Sonnet 4.5 | US$ 0,010–0,015 (1ª chamada) / ~US$ 0,001 (com cache) |
-| Haiku 4.5 | US$ 0,002–0,004 (1ª chamada) / ~US$ 0,0002 (com cache) |
+| Provedor / modelo | Custo por tabulação |
+|-------------------|---------------------|
+| **Gemini 2.0 Flash** | **Grátis** dentro da camada gratuita do Google AI Studio |
+| GPT-4o mini | ~US$ 0,001–0,002 |
+| Claude Sonnet 4.5 | ~US$ 0,010–0,015 |
 
-O prompt caching da Anthropic reduz o custo em ~90% após a primeira chamada de cada sessão.
+Para uso interno de baixo volume, o **Gemini gratuito** costuma ser suficiente. Os limites da camada gratuita (requisições por minuto/dia) são definidos pelo Google.
+
+> Existe também o `PROMPT-UNIVERSAL.md` / `PROMPT-CURTO.md` (na pasta acima): o mesmo trabalho em forma de prompt para colar em qualquer chat de IA, sem rodar o app.
 
 ---
 
@@ -124,5 +133,4 @@ O prompt caching da Anthropic reduz o custo em ~90% após a primeira chamada de 
 
 - **Integração direta com Siscobra:** extensão de browser ou API para preencher os 3 campos com 1 clique.
 - **Webhook WhatsApp Business:** receber conversas automaticamente da plataforma, sem copiar/colar.
-- **Fine-tuning do prompt:** usar o log de tabulações editadas pelos operadores para refinar a IA após 1-2 semanas de uso.
-- **Dashboard de métricas:** % aprovado vs editado, complementos mais frequentes, operadores que mais editam (sinal de retreinamento necessário).
+- **Dashboard de métricas:** % aprovado vs editado, complementos mais frequentes, operadores que mais editam.

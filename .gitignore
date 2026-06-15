@@ -8,8 +8,10 @@ env/
 
 # Banco de dados local
 tabulacoes.db
+tabulacoes.db-wal
+tabulacoes.db-shm
 
-# Config local (operadores cadastrados — opcional subir)
+# Config local (operadores + CHAVES DE API coladas na interface — NUNCA subir)
 config.json
 
 # Python

@@ -1,43 +1,75 @@
 """
-Wrapper da chamada à API Anthropic.
-Implementa prompt caching, retry em JSON malformado e cálculo de custo.
+Wrapper multi-provedor da chamada ao LLM.
+
+Provedores suportados:
+  - gemini    → Google Gemini (POSSUI CAMADA GRATUITA). Usa o endpoint compatível
+                com a API da OpenAI, então funciona com o SDK `openai`.
+  - openai    → GPT (API da OpenAI).
+  - anthropic → Claude (legado, pago).
+
+A chave de API é colada na aba Configurações (salva em config.json) ou lida do
+ambiente/.env. O system prompt é o mesmo para todos os provedores (prompt.py).
 """
 from __future__ import annotations
 
 import json
-import os
 import time
 from dataclasses import dataclass
 
-import anthropic
 from dotenv import load_dotenv
 
+from .config import carregar_config, obter_chave
 from .prompt import montar_system_prompt
 from .taxonomia import validar_par
 
 load_dotenv()
 
 
-def _obter_api_key() -> str:
-    """Lê a API key do st.secrets (Streamlit Cloud) ou do .env (local)."""
-    try:
-        import streamlit as st
-        return st.secrets["ANTHROPIC_API_KEY"]
-    except Exception:
-        return os.getenv("ANTHROPIC_API_KEY", "")
+# ── Catálogo de provedores ────────────────────────────────────────────────────
+# tipo: "openai" usa o SDK openai (Gemini reutiliza esse SDK via base_url);
+#       "anthropic" usa o SDK anthropic.
 
-
-# ── Configuração ──────────────────────────────────────────────────────────────
-
-_MODELO_PADRAO = os.getenv("MODEL_NAME", "claude-sonnet-4-5")
-
-# Preços por milhão de tokens (USD) — atualizar se a Anthropic mudar
-_PRECOS: dict[str, dict[str, float]] = {
-    "claude-sonnet-4-5": {"input": 3.0, "output": 15.0, "cache_write": 3.75, "cache_read": 0.30},
-    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.0, "cache_write": 1.0, "cache_read": 0.08},
+PROVEDORES: dict[str, dict] = {
+    "gemini": {
+        "label": "Google Gemini — possui camada GRATUITA",
+        "tipo": "openai",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "modelo_padrao": "gemini-2.0-flash",
+        "modelos_sugeridos": ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"],
+        "link_chave": "https://aistudio.google.com/apikey",
+    },
+    "openai": {
+        "label": "OpenAI (GPT)",
+        "tipo": "openai",
+        "base_url": None,  # usa o endpoint padrão da OpenAI
+        "modelo_padrao": "gpt-4o-mini",
+        "modelos_sugeridos": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
+        "link_chave": "https://platform.openai.com/api-keys",
+    },
+    "anthropic": {
+        "label": "Anthropic (Claude) — pago",
+        "tipo": "anthropic",
+        "base_url": None,
+        "modelo_padrao": "claude-sonnet-4-5",
+        "modelos_sugeridos": ["claude-sonnet-4-5", "claude-haiku-4-5-20251001"],
+        "link_chave": "https://console.anthropic.com/settings/keys",
+    },
 }
 
-_PRECO_FALLBACK = {"input": 3.0, "output": 15.0, "cache_write": 3.75, "cache_read": 0.30}
+
+# Preços por milhão de tokens (USD), só para estimativa no histórico.
+# Modelos gratuitos (Gemini free tier) ficam em 0.
+_PRECOS: dict[str, dict[str, float]] = {
+    "gemini-2.0-flash": {"input": 0.0, "output": 0.0},
+    "gemini-2.5-flash": {"input": 0.0, "output": 0.0},
+    "gemini-1.5-flash": {"input": 0.0, "output": 0.0},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+    "gpt-4o": {"input": 2.50, "output": 10.0},
+    "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
+    "claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
+    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.0},
+}
+_PRECO_FALLBACK = {"input": 0.0, "output": 0.0}
 
 
 @dataclass
@@ -58,20 +90,12 @@ class ResultadoTabulacao:
     tempo_segundos: float
 
 
-def _calcular_custo(
-    modelo: str,
-    tokens_input: int,
-    tokens_output: int,
-    tokens_cache_write: int,
-    tokens_cache_read: int,
-) -> float:
-    """Calcula o custo estimado em USD."""
+def _calcular_custo(modelo: str, tokens_input: int, tokens_output: int) -> float:
+    """Estimativa simples de custo em USD (0 para modelos gratuitos)."""
     precos = _PRECOS.get(modelo, _PRECO_FALLBACK)
     custo = (
         (tokens_input / 1_000_000) * precos["input"]
         + (tokens_output / 1_000_000) * precos["output"]
-        + (tokens_cache_write / 1_000_000) * precos["cache_write"]
-        + (tokens_cache_read / 1_000_000) * precos["cache_read"]
     )
     return round(custo, 6)
 
@@ -79,10 +103,9 @@ def _calcular_custo(
 def _parsear_resposta(texto: str) -> dict:
     """
     Tenta parsear o JSON retornado pelo LLM.
-    Remove blocos de markdown se o modelo os incluir por engano.
+    Remove blocos de markdown (```json ... ```) se o modelo os incluir.
     """
-    texto = texto.strip()
-    # Remove ```json ... ``` se presente
+    texto = (texto or "").strip()
     if texto.startswith("```"):
         linhas = texto.splitlines()
         texto = "\n".join(linhas[1:-1] if linhas[-1].strip() == "```" else linhas[1:])
@@ -107,31 +130,85 @@ def _validar_estrutura(dados: dict) -> None:
         )
 
 
-def tabular(conversa_formatada: str, modelo: str | None = None) -> ResultadoTabulacao:
-    """
-    Envia a conversa ao LLM e retorna a tabulação estruturada.
-    Em caso de JSON malformado, faz um re-prompt uma vez.
-    """
-    modelo = modelo or _MODELO_PADRAO
-    client = anthropic.Anthropic(api_key=_obter_api_key())
-    system_prompt = montar_system_prompt()
-    inicio = time.time()
+# ── Clientes por provedor ─────────────────────────────────────────────────────
 
-    def _chamar_api(mensagens: list[dict]) -> anthropic.types.Message:
-        return client.messages.create(
+def _criar_enviador(spec: dict, modelo: str, chave: str, system_prompt: str):
+    """
+    Retorna uma função enviar(mensagens) -> (texto, tokens_input, tokens_output)
+    específica do provedor. 'mensagens' é a lista no formato role/content.
+    """
+    if spec["tipo"] == "openai":
+        from openai import OpenAI
+
+        kwargs = {"api_key": chave}
+        if spec.get("base_url"):
+            kwargs["base_url"] = spec["base_url"]
+        client = OpenAI(**kwargs)
+
+        def enviar(mensagens: list[dict]) -> tuple[str, int, int]:
+            resposta = client.chat.completions.create(
+                model=modelo,
+                messages=[{"role": "system", "content": system_prompt}, *mensagens],
+                max_tokens=1024,
+                temperature=0,
+                response_format={"type": "json_object"},
+            )
+            texto = resposta.choices[0].message.content or ""
+            uso = getattr(resposta, "usage", None)
+            ti = getattr(uso, "prompt_tokens", 0) or 0
+            to = getattr(uso, "completion_tokens", 0) or 0
+            return texto, ti, to
+
+        return enviar
+
+    # anthropic
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=chave)
+
+    def enviar(mensagens: list[dict]) -> tuple[str, int, int]:
+        resposta = client.messages.create(
             model=modelo,
             max_tokens=1024,
-            system=[
-                {
-                    "type": "text",
-                    "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"},  # Prompt caching
-                }
-            ],
+            system=system_prompt,
             messages=mensagens,
         )
+        texto = resposta.content[0].text
+        uso = resposta.usage
+        ti = getattr(uso, "input_tokens", 0) or 0
+        to = getattr(uso, "output_tokens", 0) or 0
+        return texto, ti, to
 
-    mensagens_usuario: list[dict] = [
+    return enviar
+
+
+def tabular(
+    conversa_formatada: str,
+    provedor: str | None = None,
+    modelo: str | None = None,
+    chave: str | None = None,
+) -> ResultadoTabulacao:
+    """
+    Envia a conversa ao LLM do provedor escolhido e retorna a tabulação estruturada.
+    Em caso de JSON malformado ou par inválido, faz um re-prompt uma vez.
+    """
+    config = carregar_config()
+    provedor = provedor or config.get("provedor", "gemini")
+    spec = PROVEDORES.get(provedor) or PROVEDORES["gemini"]
+    modelo = modelo or config.get("modelo") or spec["modelo_padrao"]
+    chave = chave or obter_chave(provedor)
+
+    if not chave:
+        raise RuntimeError(
+            f"Nenhuma chave de API configurada para o provedor '{provedor}'. "
+            "Abra a aba Configurações, cole a chave e salve."
+        )
+
+    system_prompt = montar_system_prompt()
+    enviar = _criar_enviador(spec, modelo, chave, system_prompt)
+    inicio = time.time()
+
+    mensagens: list[dict] = [
         {
             "role": "user",
             "content": (
@@ -142,17 +219,14 @@ def tabular(conversa_formatada: str, modelo: str | None = None) -> ResultadoTabu
         }
     ]
 
-    resposta = _chamar_api(mensagens_usuario)
-    texto_resposta = resposta.content[0].text
+    texto, tokens_input, tokens_output = enviar(mensagens)
 
-    # Tenta parsear; se falhar, faz re-prompt uma vez
     try:
-        dados = _parsear_resposta(texto_resposta)
+        dados = _parsear_resposta(texto)
         _validar_estrutura(dados)
     except (json.JSONDecodeError, ValueError) as erro_original:
-        # Re-prompt pedindo correção
-        mensagens_usuario.append({"role": "assistant", "content": texto_resposta})
-        mensagens_usuario.append(
+        mensagens.append({"role": "assistant", "content": texto})
+        mensagens.append(
             {
                 "role": "user",
                 "content": (
@@ -161,21 +235,14 @@ def tabular(conversa_formatada: str, modelo: str | None = None) -> ResultadoTabu
                 ),
             }
         )
-        resposta = _chamar_api(mensagens_usuario)
-        texto_resposta = resposta.content[0].text
-        dados = _parsear_resposta(texto_resposta)
+        texto, ti2, to2 = enviar(mensagens)
+        tokens_input += ti2
+        tokens_output += to2
+        dados = _parsear_resposta(texto)
         _validar_estrutura(dados)
 
     tempo = round(time.time() - inicio, 2)
-
-    # Extrai contadores de tokens (com suporte a prompt caching)
-    uso = resposta.usage
-    tokens_input = getattr(uso, "input_tokens", 0)
-    tokens_output = getattr(uso, "output_tokens", 0)
-    tokens_cache_write = getattr(uso, "cache_creation_input_tokens", 0)
-    tokens_cache_read = getattr(uso, "cache_read_input_tokens", 0)
-
-    custo = _calcular_custo(modelo, tokens_input, tokens_output, tokens_cache_write, tokens_cache_read)
+    custo = _calcular_custo(modelo, tokens_input, tokens_output)
 
     return ResultadoTabulacao(
         situacao_atual=dados["situacao_atual"],
@@ -187,9 +254,9 @@ def tabular(conversa_formatada: str, modelo: str | None = None) -> ResultadoTabu
         observacoes_para_operador=dados.get("observacoes_para_operador"),
         tokens_input=tokens_input,
         tokens_output=tokens_output,
-        tokens_cache_write=tokens_cache_write,
-        tokens_cache_read=tokens_cache_read,
+        tokens_cache_write=0,
+        tokens_cache_read=0,
         custo_usd=custo,
-        modelo=modelo,
+        modelo=f"{provedor}:{modelo}",
         tempo_segundos=tempo,
     )
